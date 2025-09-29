@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TradeLedger Pro — Single File</title>
+  <link rel="icon" href="/tradeledger/favicon-32.png" />
+  <meta name="theme-color" content="#0b0f14" />
+  <style>
+:root{
+  --bg:#0b0f14; --panel:#0f141a; --panel-2:#121922;
+  --text:#e6edf3; --muted:#7a8699; --accent:#27a6ff;
+  --ok:#18c08f; --warn:#ffc14d; --err:#ff6b6b;
+  --radius:12px; --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-6:24px;
+  --hair:rgba(230,237,243,0.08);
+  --shadow:0 6px 24px rgba(0,0,0,0.25);
+  --mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+*{box-sizing:border-box} html,body,#app{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+
+.app{
+  display:grid; grid-template-columns: 260px 1fr; height:100%;
+}
+
+/* Sidebar */
+.sidebar{
+  background:linear-gradient(180deg, var(--panel), var(--panel-2));
+  border-right:1px solid var(--hair);
+  padding: var(--space-4);
+}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.brand .dot{width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 18px var(--accent)}
+.brand h1{font-size:16px;margin:0;letter-spacing:.3px}
+
+.nav{display:flex;flex-direction:column;gap:6px}
+.nav a{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;
+  color:var(--text);text-decoration:none;border:1px solid transparent
+}
+.nav a .icon{width:18px;height:18px;opacity:.9}
+.nav a.active{background:rgba(39,166,255,.12);border-color:rgba(39,166,255,.25)}
+.nav a:hover{background:rgba(255,255,255,.04)}
+
+/* Topbar */
+.main{display:flex;flex-direction:column;min-width:0}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border-bottom:1px solid var(--hair);background:var(--panel);
+  position:sticky;top:0;z-index:5;
+}
+.topbar .title{font-weight:600}
+.topbar .filters{display:flex;gap:8px;align-items:center}
+.tag{
+  padding:6px 10px;border-radius:999px;border:1px solid var(--hair);
+  color:var(--muted);background:rgba(255,255,255,.02);font-size:12px
+}
+
+/* Page container */
+.page{padding:16px;display:grid;gap:16px}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.card{
+  background:var(--panel); border:1px solid var(--hair); border-radius:var(--radius);
+  padding:16px; box-shadow:var(--shadow);
+}
+.card h3{margin:0 0 12px 0;font-size:14px;color:#cbd5e1;letter-spacing:.2px}
+
+/* Dashboard summary tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.tile{padding:14px;border-radius:12px;background:var(--panel-2);border:1px solid var(--hair)}
+.tile .k{font-size:12px;color:var(--muted)}
+.tile .v{margin-top:6px;font-family:var(--mono);font-size:20px}
+
+/* Table (Trades stub) */
+.table{width:100%;border-collapse:collapse;font-size:14px}
+.table th,.table td{padding:10px;border-bottom:1px solid var(--hair);text-align:left}
+.table th{color:#b6c2cf;font-weight:600}
+.table tr:hover{background:rgba(255,255,255,.03)}
+
+@media (max-width: 900px){
+  .app{ grid-template-columns: 1fr }
+  .sidebar{ position:sticky; top:0; z-index:10 }
+}
+
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    // --- Minimal inlined router/pages/store (no SW) ---
+    const stylesLoaded = true;
+    class Store {
+      constructor(){
+        const ls = localStorage.getItem('tradeledger.trades') || localStorage.getItem('trades') || '[]';
+        try { this.trades = JSON.parse(ls); } catch { this.trades = []; }
+        if (!this.trades.length) {
+          this.trades = [
+            { date:'2025-09-22', symbol:'MES1!', direction:'Long', r: 0.98, pnl: 146.88 },
+            { date:'2025-09-22', symbol:'MES1!', direction:'Long', r: 0.91, pnl: 136.88 },
+            { date:'2025-09-23', symbol:'MES1!', direction:'Long', r:-0.07, pnl:  -9.16 },
+            { date:'2025-09-23', symbol:'MES1!', direction:'Short', r: 1.40, pnl: 210.00 },
+            { date:'2025-09-24', symbol:'MES1!', direction:'Long', r: 1.33, pnl: 200.00 },
+          ];
+        }
+      }
+      getSummary(){
+        const pnl = this.trades.reduce((s,t)=>s+(+t.pnl||0),0);
+        const wins = this.trades.filter(t=>t.pnl>0).length;
+        const wr = this.trades.length? Math.round((wins/this.trades.length)*100):0;
+        const avgR = this.trades.length? (this.trades.reduce((s,t)=>s+(+t.r||0),0)/this.trades.length).toFixed(2):'0.00';
+        const equity = this._equity();
+        let peak = -1e9, maxDD = 0;
+        for (const v of equity){ if (v>peak) peak=v; maxDD = Math.min(maxDD, v-peak); }
+        return { pnl, wr, avgR, dd: maxDD };
+      }
+      _equity(){ let e=0; return this.trades.map(t=> e += (+t.pnl||0)); }
+      getEquitySeries(){ let e=0; return this.trades.map((t,i)=>({ x:i+1, y:(e+=(+t.pnl||0)) })); }
+    }
+
+    function mountShell(root){
+      root.innerHTML = `
+      <div class="app">
+        <aside class="sidebar">
+          <div class="brand">
+            <div class="dot"></div>
+            <h1>TradeLedger&nbsp;Pro</h1>
+          </div>
+          <nav class="nav">
+            <a href="#/app/dashboard"><svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>Dashboard</a>
+            <a href="#/app/trades"><svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M3 5h18v2H3V5zm0 6h18v2H3v-2zm0 6h12v2H3v-2z"/></svg>Trades</a>
+            <a href="#/app/journal"><svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M19 2H8a3 3 0 0 0-3 3v14a3 3 0 0 0 3 3h11V2zM8 4h9v16H8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path fill="currentColor" d="M5 6h2v12H5z"/></svg>Journal</a>
+            <a href="#/app/analytics"><svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M3 3h2v18H3V3zm16 8h2v10h-2V11zM7 13h2v8H7v-8zm8-6h2v14h-2V7z"/></svg>Analytics</a>
+            <a href="#/app/playbooks"><svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4V4zm14 14V8a2 2 0 0 0-2-2H6v10a2 2 0 0 0 2 2h10z"/></svg>Playbooks</a>
+            <a href="#/app/settings"><svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm8.94 4.94l-1.41-.82a7.96 7.96 0 0 0 0-2.24l1.41-.82-1.41-2.44-1.63.67a8.04 8.04 0 0 0-1.94-1.12L15.7 2h-3.4l-.65 1.98a8.04 8.04 0 0 0-1.94 1.12l-1.63-.67L4.67 6.9l1.41.82a7.96 7.96 0 0 0 0 2.24l-1.41.82 1.41 2.44 1.63-.67c.6.46 1.24.85 1.94 1.12L12.3 22h3.4l.65-1.98c.7-.27 1.34-.66 1.94-1.12l1.63.67 1.41-2.44z"/></svg>Settings</a>
+          </nav>
+        </aside>
+
+        <main class="main">
+          <div class="topbar">
+            <div class="title">Dashboard</div>
+            <div class="filters">
+              <span class="tag">Date: Last 30d</span>
+              <span class="tag">Symbol: All</span>
+              <span class="tag">Session: All</span>
+            </div>
+          </div>
+          <div id="page-outlet" class="page"></div>
+        </main>
+      </div>`;
+    }
+
+    function sparkline(canvas, labels, values){
+      const ctx = canvas.getContext('2d');
+      return new Chart(ctx, {
+        type:'line',
+        data:{ labels, datasets:[{ data: values, tension:.25, borderWidth:2, pointRadius:0, fill:false }] },
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{display:false}, tooltip:{enabled:true} },
+          scales:{ x:{ display:false }, y:{ display:false } }
+        }
+      });
+    }
+
+    function DashboardPage(root, store){
+      const s = store.getSummary();
+      root.innerHTML = `
+        <section class="tiles">
+          <div class="tile"><div class="k">Net P&L</div><div class="v">$${s.pnl.toFixed(2)}</div></div>
+          <div class="tile"><div class="k">Win Rate</div><div class="v">${s.wr}%</div></div>
+          <div class="tile"><div class="k">Avg R/Trade</div><div class="v">${s.avgR}</div></div>
+          <div class="tile"><div class="k">Max Drawdown</div><div class="v">$${s.dd.toFixed(2)}</div></div>
+        </section>
+
+        <section class="grid">
+          <div class="card" style="grid-column: span 8">
+            <h3>Equity Curve</h3>
+            <div style="height:240px"><canvas id="eq"></canvas></div>
+          </div>
+          <div class="card" style="grid-column: span 4">
+            <h3>Today</h3>
+            <p class="tag">Session: London · New York</p>
+            <p class="tag">Symbols: All</p>
+            <p class="tag">Saved view: Default</p>
+            <p style="color:var(--muted)">Use Settings to link Journal and Trades. Add widgets in Analytics.</p>
+          </div>
+        </section>
+      `;
+      const series = store.getEquitySeries();
+      sparkline(document.getElementById('eq'), series.map(p=>p.x), series.map(p=>p.y));
+    }
+
+    function TradesPage(root, store){
+      const rows = store.trades.map(t=>`
+        <tr>
+          <td>${t.date}</td>
+          <td>${t.symbol}</td>
+          <td>${t.direction}</td>
+          <td>${(+t.r||0).toFixed(2)}R</td>
+          <td>$${(+t.pnl||0).toFixed(2)}</td>
+        </tr>`).join('');
+      root.innerHTML = `
+        <div class="card">
+          <h3>Trades</h3>
+          <table class="table">
+            <thead><tr><th>Date</th><th>Symbol</th><th>Dir</th><th>R</th><th>P&L</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function JournalPage(root){
+      root.innerHTML = `
+        <div class="card">
+          <h3>Journal (Day View)</h3>
+          <p style="color:var(--muted)">Calendar + notes + trades per day will live here. Click a date → show entries.</p>
+        </div>`;
+    }
+
+    function AnalyticsPage(root){
+      root.innerHTML = `
+        <div class="card">
+          <h3>Analytics</h3>
+          <p style="color:var(--muted)">Widget canvas (Expectancy, R-distribution, Heatmap, Streaks). Add/Remove/Resize widgets here.</p>
+        </div>`;
+    }
+
+    function PlaybooksPage(root){
+      root.innerHTML = `
+        <div class="card">
+          <h3>Playbooks</h3>
+          <p class="tag">Setups</p>
+          <p class="tag">Risk Rules</p>
+          <p class="tag">Mindset</p>
+          <p style="color:var(--muted)">Each playbook: checklist + examples + link recent trades.</p>
+        </div>`;
+    }
+
+    function SettingsPage(root){
+      root.innerHTML = `
+        <div class="card">
+          <h3>Settings</h3>
+          <p style="color:var(--muted)">Theme, fields, tags, currency, data import/export.</p>
+        </div>`;
+    }
+
+    const routes = {
+      '#/app/dashboard': DashboardPage,
+      '#/app/trades': TradesPage,
+      '#/app/journal': JournalPage,
+      '#/app/analytics': AnalyticsPage,
+      '#/app/playbooks': PlaybooksPage,
+      '#/app/settings': SettingsPage,
+    };
+
+    function initRouter(store){
+      const render = () => {
+        const key = Object.keys(routes).find(k => location.hash.startsWith(k)) || '#/app/dashboard';
+        const Page = routes[key];
+        const outlet = document.getElementById('page-outlet');
+        outlet.innerHTML = '';
+        Page(outlet, store);
+        document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href')===key));
+        document.querySelector('.topbar .title').textContent = key.split('/').slice(-1)[0].replace(/^\w/, c=>c.toUpperCase());
+      };
+      addEventListener('hashchange', render);
+      render();
+    }
+
+    const appEl = document.getElementById('app');
+    const store = new Store();
+    mountShell(appEl);
+    initRouter(store);
+    if (!location.hash) location.hash = '#/app/dashboard';
+  </script>
+</body>
+</html>
