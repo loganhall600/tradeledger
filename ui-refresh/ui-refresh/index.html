@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TradeLedger Pro — UI Refresh</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./favicon-32.png" />
+  <link rel="apple-touch-icon" href="./icon-180.png" />
+  <meta name="theme-color" content="#0b0f14" />
+  <link rel="stylesheet" href="./styles.css" />
+  <!-- Chart.js via CDN (cached by SW for offline) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script type="module" src="./app.js" defer></script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // Register SW (keeps updates snappy)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+      navigator.serviceWorker.getRegistration().then(reg => {
+        if (reg) {
+          reg.onupdatefound = () => {
+            const sw = reg.installing;
+            if (sw) sw.onstatechange = () => {
+              if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                reg.waiting?.postMessage('SKIP_WAITING');
+              }
+            };
+          };
+        }
+      });
+    }
+  </script>
+</body>
+</html>
